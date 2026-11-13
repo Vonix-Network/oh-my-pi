@@ -50,6 +50,24 @@ test("project surfaces tool lifecycle without leaking whole results", () => {
 	assert.equal(summarizeResult(null), "");
 });
 
+test("summarizeResult unwraps the content-block envelope", () => {
+	// A real bash result shape: the readable output is inside content[].text, and
+	// rendering the envelope as JSON buries it in metadata.
+	const result = {
+		content: [{ type: "text", text: "line one\nline two" }],
+		details: { wallTimeMs: 10, timeoutSeconds: 300 },
+	};
+	assert.equal(summarizeResult(result), "line one\nline two");
+	assert.ok(!summarizeResult(result).includes("wallTimeMs"));
+
+	// Multiple blocks join with newlines.
+	assert.equal(summarizeResult({ content: [{ type: "text", text: "a" }, { type: "text", text: "b" }] }), "a\nb");
+
+	// An envelope with no text falls back to JSON rather than returning empty.
+	const noText = { content: [], details: { x: 1 } };
+	assert.match(summarizeResult(noText), /details/);
+});
+
 test("project reports response failures with the error preserved", () => {
 	const failed = project({ type: "response", command: "prompt", success: false, error: "nope", code: "x" });
 	assert.equal(failed.success, false);

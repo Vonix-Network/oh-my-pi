@@ -192,10 +192,28 @@ export function project(frame) {
 	}
 }
 
-/** Tool results can hold whole files; the HUD needs a short preview only. */
+/** Tool results can hold whole files; the HUD needs a short readable preview. */
 export function summarizeResult(result, limit = 1200) {
 	if (result === undefined || result === null) return "";
 	if (typeof result === "string") return result.length > limit ? `${result.slice(0, limit)}…` : result;
+
+	// Tool results arrive wrapped as `{ content: [{ type: "text", text }], details }`.
+	// Rendering the envelope as JSON buries the actual output in metadata.
+	const unwrap = value => {
+		if (!value || typeof value !== "object") return null;
+		const blocks = value.content;
+		if (!Array.isArray(blocks)) return null;
+		const text = blocks
+			.filter(block => block && typeof block.text === "string")
+			.map(block => block.text)
+			.join("\n")
+			.trim();
+		return text || null;
+	};
+
+	const inner = unwrap(result);
+	if (inner) return inner.length > limit ? `${inner.slice(0, limit)}…` : inner;
+
 	try {
 		const text = JSON.stringify(result);
 		return text.length > limit ? `${text.slice(0, limit)}…` : text;
@@ -308,7 +326,20 @@ export function createJarvisServer(options) {
 				});
 			}
 
-			// Everything below is privileged when a token is configured.
+			// The token gates data and commands, not the app shell. Static assets
+			// carry no secrets, and a browser cannot attach a header (or a query
+			// string) to a subresource request — gating them makes the page load as
+			// blank HTML with 401s for its own script and stylesheet.
+			if (!url.pathname.startsWith("/api/")) {
+				if (req.method !== "GET" && req.method !== "HEAD") throw Object.assign(new Error("method not allowed"), { status: 405 });
+				// `await` matters: returning the promise from inside `try` would let a
+				// rejection (the 404/403 paths below) escape this catch, so the
+				// response is never written and the client hangs until it times out.
+				return await serveStatic(res, url.pathname, req.method === "HEAD");
+			}
+
+			// Everything below is data or an effect, so a token is required when one
+			// is configured.
 			if (options.token && !tokenMatches(options.token, presentedToken(req, url))) {
 				metrics.rejected += 1;
 				throw Object.assign(new Error("unauthorized"), { status: 401 });
@@ -345,6 +376,10 @@ export function createJarvisServer(options) {
 				return;
 			}
 
+			// The token gates data and commands, not the app shell. Static assets
+			// carry no secrets, and a browser cannot attach a header (or a query
+			// string) to a subresource request — gating them makes the page load as
+			// blank HTML with 401s for its own script and stylesheet.
 			if (req.method !== "GET" && req.method !== "HEAD") throw Object.assign(new Error("method not allowed"), { status: 405 });
 			return serveStatic(res, url.pathname, req.method === "HEAD");
 		} catch (error) {

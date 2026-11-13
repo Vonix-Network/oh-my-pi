@@ -52,8 +52,34 @@ const state = {
 	context: null,
 	startedAt: 0,
 	tps: null,
-	token: new URLSearchParams(location.search).get("token") ?? "",
+	token: readToken(),
 };
+
+/**
+ * A token is accepted from `?token=`, then remembered for the tab so the
+ * WebSocket can carry it and a reload does not lose access. sessionStorage
+ * (not localStorage) keeps it scoped to this tab and gone when it closes.
+ */
+function readToken() {
+	const fromQuery = new URLSearchParams(location.search).get("token");
+	if (fromQuery) {
+		try {
+			sessionStorage.setItem("jarvis-token", fromQuery);
+		} catch {
+			/* storage blocked; keep the in-memory copy */
+		}
+		// Drop it from the visible URL so it is not shoulder-surfed or bookmarked.
+		const cleaned = new URL(location.href);
+		cleaned.searchParams.delete("token");
+		history.replaceState({}, "", `${cleaned.pathname}${cleaned.search}${cleaned.hash}`);
+		return fromQuery;
+	}
+	try {
+		return sessionStorage.getItem("jarvis-token") ?? "";
+	} catch {
+		return "";
+	}
+}
 
 /* ── orb ──────────────────────────────────────────────────────────────── */
 
@@ -228,7 +254,10 @@ function settlePhase() {
 
 function wsUrl() {
 	const scheme = location.protocol === "https:" ? "wss" : "ws";
-	return `${scheme}://${location.host}/ws`;
+	// A WebSocket upgrade cannot carry an Authorization header from page JS, so
+	// the token rides the query string on this one request.
+	const query = state.token ? `?token=${encodeURIComponent(state.token)}` : "";
+	return `${scheme}://${location.host}/ws${query}`;
 }
 
 function connect() {
@@ -309,6 +338,7 @@ function handleFrame(frame) {
 		case "agent_start":
 			state.streaming = true;
 			els.stop.disabled = false;
+			beginTurn();
 			setPhase("thinking");
 			return;
 		case "agent_end":
@@ -530,8 +560,16 @@ function finishMessage(frame) {
 		entry.meta.hidden = false;
 		entry.meta.textContent = "turn ended with an error";
 	}
-	state.lastAssistantId = frame.messageId;
-	speak(entry.text);
+	// A message that carried no prose and no reasoning is a tool-call carrier.
+	// Its bubble would render as an empty box; the activity block already shows
+	// what it did.
+	if (!entry.text && !entry.thinkingText) {
+		entry.li.remove();
+		state.messages.delete(frame.messageId);
+	} else {
+		state.lastAssistantId = frame.messageId;
+		speak(entry.text);
+	}
 	if (nearBottom()) scrollToBottom();
 }
 
@@ -552,8 +590,41 @@ function finishStreamingBubbles() {
 	}
 }
 
+/* ── turn activity ────────────────────────────────────────────────────── */
+
+/**
+ * One activity block per agent turn.
+ *
+ * A turn can span several assistant messages (narration, a tool call, more
+ * narration). Rendering tool lines inside each message bubble splits one turn's
+ * work across several near-empty bubbles, which reads as broken. Collecting the
+ * tools in a single block under the turn keeps the transcript honest: prose with
+ * prose, activity with activity.
+ */
+function beginTurn() {
+	state.turnTools = null;
+}
+
+function turnToolList() {
+	if (state.turnTools && state.turnTools.isConnected) return state.turnTools;
+	dropEmptyState();
+	const wrap = document.createElement("li");
+	wrap.className = "turn-activity";
+	const label = document.createElement("p");
+	label.className = "turn-activity-label";
+	label.textContent = "activity";
+	const list = document.createElement("ul");
+	list.className = "msg-tools";
+	wrap.append(label, list);
+	els.stream.append(wrap);
+	state.turnTools = wrap;
+	state.turnToolItems = list;
+	if (nearBottom()) scrollToBottom();
+	return wrap;
+}
+
 function startTool(frame) {
-	const entry = ensureAssistant(state.currentMessageId ?? "live-assistant");
+	turnToolList();
 	const toolId = frame.id ?? `tool-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 	// A tool can be announced by both a streamed toolcall_end and a
 	// tool_execution_start carrying the same id; render it once.
@@ -569,7 +640,7 @@ function startTool(frame) {
 	arg.className = "tool-arg";
 	arg.textContent = describeArgs(frame.args);
 	li.append(name, arg);
-	entry.tools.append(li);
+	state.turnToolItems.append(li);
 	const record = { li, name, arg, state: "running" };
 	state.tools.set(toolId, record);
 	if (nearBottom()) scrollToBottom();

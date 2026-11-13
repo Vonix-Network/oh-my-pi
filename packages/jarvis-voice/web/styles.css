@@ -467,6 +467,24 @@
 		list-style: none;
 	}
 
+	.turn-activity {
+		display: grid;
+		gap: 0.2rem;
+		padding: 0.45rem 0.7rem 0.5rem;
+		border: 1px dashed var(--line-strong);
+		border-radius: 10px;
+		background: rgba(10, 18, 30, 0.5);
+		max-width: 78ch;
+	}
+
+	.turn-activity-label {
+		margin: 0 0 0.1rem;
+		font: 600 0.58rem/1 var(--mono);
+		text-transform: uppercase;
+		letter-spacing: 0.14em;
+		color: var(--ink-faint);
+	}
+
 	.tool-line {
 		display: flex;
 		align-items: baseline;
