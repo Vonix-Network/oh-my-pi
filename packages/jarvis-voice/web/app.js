@@ -276,6 +276,7 @@ function connect() {
 	socket.addEventListener("close", () => {
 		setLink("closed", "disconnected");
 		if (state.phase !== "error") setPhase("error", "bridge disconnected");
+		void checkAuth();
 		scheduleReconnect();
 	});
 
@@ -319,6 +320,93 @@ function sendCommand(type, payload, requestId) {
 
 function requestState() {
 	sendCommand("get_state", {}, "state-refresh");
+}
+
+/* ── auth gate ────────────────────────────────────────────────────────── */
+
+/**
+ * A refused socket is indistinguishable from a dead server in the browser, so
+ * the HUD must ask the server why. `/api/state` answers 401 when a token is
+ * required and the tab does not have a valid one; that is the moment to show a
+ * token prompt rather than silently retrying a connection that can never open.
+ */
+let authChecking = false;
+
+async function checkAuth() {
+	if (authChecking) return;
+	authChecking = true;
+	try {
+		const headers = state.token ? { "x-jarvis-token": state.token } : {};
+		const response = await fetch("/api/state", { headers, cache: "no-store" });
+		if (response.status === 401) {
+			showAuthGate(state.token ? "That token was not accepted." : null);
+			return;
+		}
+		hideAuthGate();
+	} catch {
+		/* server unreachable; the reconnect loop owns that state */
+	} finally {
+		authChecking = false;
+	}
+}
+
+function showAuthGate(message) {
+	if (els.authGate) {
+		if (message) els.authError.textContent = message;
+		els.authGate.hidden = false;
+		els.authInput.focus();
+		return;
+	}
+	const gate = document.createElement("div");
+	gate.className = "auth-gate";
+	gate.id = "auth-gate";
+	gate.innerHTML = `
+		<form class="auth-card" id="auth-form">
+			<p class="auth-title">Access token required</p>
+			<p class="auth-note">This console drives a live agent, so it needs the token from
+			<code>~/.config/omp-jarvis/token.txt</code> on the host.</p>
+			<label class="sr-only" for="auth-input">Access token</label>
+			<input id="auth-input" class="auth-input" type="password" autocomplete="off" spellcheck="false" placeholder="paste token" />
+			<p class="auth-error" id="auth-error" role="alert">${message ?? ""}</p>
+			<button class="auth-submit" type="submit">Connect</button>
+		</form>`;
+	document.body.append(gate);
+	els.authGate = gate;
+	els.authInput = gate.querySelector("#auth-input");
+	els.authError = gate.querySelector("#auth-error");
+	gate.querySelector("#auth-form").addEventListener("submit", event => {
+		event.preventDefault();
+		const value = els.authInput.value.trim();
+		if (!value) return;
+		state.token = value;
+		try {
+			sessionStorage.setItem("jarvis-token", value);
+		} catch {
+			/* storage blocked */
+		}
+		els.authError.textContent = "";
+		void checkAuth().then(() => {
+			if (!els.authGate || els.authGate.hidden) return;
+			// Token accepted: tear the socket down so connect() rebuilds it with
+			// the new credential.
+			state.reconnectAttempt = 0;
+			try {
+				state.socket?.close();
+			} catch {
+				/* already closed */
+			}
+			connect();
+		});
+	});
+	els.authInput.focus();
+}
+
+function hideAuthGate() {
+	if (!els.authGate) return;
+	els.authGate.remove();
+	els.authGate = null;
+	els.authInput = null;
+	els.authError = null;
 }
 
 /* ── frame handling ───────────────────────────────────────────────────── */
@@ -1015,6 +1103,9 @@ els.voice.setAttribute("aria-pressed", String(state.speechOut));
 setPhase("boot");
 orb.start();
 connect();
+// A tab opened without a token otherwise just retries a socket that can never
+// open; ask the server directly so the token prompt appears immediately.
+void checkAuth();
 
 // The orb loop is the HUD's only animation; keep it honest after tab switches.
 document.addEventListener("visibilitychange", () => {
