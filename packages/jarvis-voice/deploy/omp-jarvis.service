@@ -1,0 +1,49 @@
+[Unit]
+Description=omp-jarvis — voice-first system agent console
+Documentation=file://%h/DEV/omp-reference/packages/jarvis-voice/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Node >= 20 is enough; no build step and no node_modules are required.
+ExecStart=/usr/bin/env node %h/DEV/omp-reference/packages/jarvis-voice/src/cli.mjs --config %h/.config/omp-jarvis/config.json
+WorkingDirectory=%h
+Restart=on-failure
+RestartSec=3
+# A crash loop escalates slowly rather than spinning.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+TimeoutStopSec=20
+# The agent child must never outlive the service; closing its stdin is omp's
+# documented shutdown path, and KillMode=mixed signals the whole group.
+KillMode=mixed
+KillSignal=SIGTERM
+# Health: /api/health returns 503 until the RPC agent answers, so a listening
+# socket alone does not pass.
+Environment=JARVIS_LOG_LEVEL=info
+# Uncomment and set a real token to require auth on the API and WebSocket.
+# Generate with: openssl rand -hex 24
+#Environment=JARVIS_TOKEN=replace-me-with-openssl-rand-hex-24
+
+# ── Hardening ────────────────────────────────────────────────────────────────
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+# The agent edits project files, so its workspace must stay writable. Narrow
+# these to the project root you actually point it at.
+ReadWritePaths=%h/DEV
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=default.target

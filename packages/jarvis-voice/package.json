@@ -1,0 +1,21 @@
+{
+	"name": "@oh-my-pi/jarvis-voice",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "Voice-first Jarvis HUD for omp: browser console that drives an omp RPC session by speech and text",
+	"license": "MIT",
+	"engines": {
+		"node": ">=20"
+	},
+	"bin": {
+		"omp-jarvis": "./src/cli.mjs"
+	},
+	"scripts": {
+		"start": "node ./src/cli.mjs",
+		"dev": "node ./src/cli.mjs --cwd ../..",
+		"test": "node --test ./test/",
+		"check": "node --check ./src/cli.mjs && node --check ./src/server.mjs && node --check ./src/rpc-bridge.mjs && node --check ./web/app.js"
+	},
+	"files": ["src", "web", "README.md"]
+}
