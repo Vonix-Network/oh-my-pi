@@ -122,6 +122,25 @@
 		grid-area: controls;
 	}
 
+	@media (min-width: 720px) {
+		/* Tablet and up: side-by-side, so the transcript fills the vertical
+		   space instead of leaving a void under a stacked orb. */
+		.shell {
+			grid-template-columns: minmax(240px, 34%) minmax(0, 1fr);
+			grid-template-rows: auto minmax(0, 1fr) auto;
+			grid-template-areas:
+				"rail rail"
+				"core stream"
+				"controls controls";
+			gap: 0.85rem 1.2rem;
+		}
+
+		.core {
+			width: min(100%, 340px);
+			max-height: 100%;
+		}
+	}
+
 	@media (min-width: 1180px) {
 		.shell {
 			grid-template-columns: minmax(320px, 30%) minmax(0, 1fr);
@@ -206,6 +225,58 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		max-width: 22ch;
+	}
+
+	/* Below 480px the rail cannot hold four stats plus a brand and link state.
+	   Two rows beat four cramped ones: brand + link on top, stats on a single
+	   horizontally scrollable strip. */
+	@media (max-width: 479px) {
+		.rail {
+			gap: 0.4rem 0.6rem;
+			padding: 0.4rem 0.6rem;
+		}
+
+		.rail-brand {
+			order: 1;
+		}
+
+		.rail-right {
+			order: 2;
+		}
+
+		.rail-stats {
+			order: 3;
+			flex: 1 0 100%;
+			flex-wrap: nowrap;
+			overflow-x: auto;
+			scrollbar-width: none;
+			gap: 0.85rem;
+			padding-bottom: 0.1rem;
+		}
+
+		.rail-stats::-webkit-scrollbar {
+			display: none;
+		}
+
+		.stat dd {
+			font-size: 0.76rem;
+			max-width: 16ch;
+		}
+
+		.acts {
+			order: 3;
+			flex: 1 1 100%;
+			justify-content: space-between;
+		}
+
+		.act {
+			flex: 1;
+			min-width: 0;
+		}
+
+		.hint {
+			font-size: 0.62rem;
+		}
 	}
 
 	.rail-right {
